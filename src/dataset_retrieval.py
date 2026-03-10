@@ -99,6 +99,31 @@ class Sketchy(torch.utils.data.Dataset):
         return dataset_transforms
 
 
+class SketchyImageGallery(torch.utils.data.Dataset):
+    def __init__(self, opts, transform, photos_by_category):
+        self.opts = opts
+        self.transform = transform
+        self.image_paths = []
+        self.categories = []
+
+        for category in sorted(photos_by_category):
+            for image_path in sorted(photos_by_category[category]):
+                self.image_paths.append(image_path)
+                self.categories.append(category)
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, index):
+        image_path = self.image_paths[index]
+        category = self.categories[index]
+        image = ImageOps.pad(
+            Image.open(image_path).convert('RGB'),
+            size=(self.opts.max_size, self.opts.max_size))
+        image_tensor = self.transform(image)
+        return image_tensor, category
+
+
 if __name__ == '__main__':
     from experiments.options import opts
 

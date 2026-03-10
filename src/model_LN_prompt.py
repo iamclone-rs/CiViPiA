@@ -26,6 +26,27 @@ def average_precision(scores, target):
         torch.arange(ranked_target.shape[0], dtype=torch.float32) + 1.0)
     return (precision * ranked_target).sum() / ranked_target.sum()
 
+
+def average_precision_at_k(scores, target, k):
+    if target.sum() == 0:
+        return torch.tensor(0.0)
+    ranking = torch.argsort(scores, descending=True)[:k]
+    ranked_target = target[ranking].float()
+    precision = torch.cumsum(ranked_target, dim=0) / (
+        torch.arange(ranked_target.shape[0], dtype=torch.float32) + 1.0)
+    normalizer = min(int(target.sum().item()), k)
+    if normalizer == 0:
+        return torch.tensor(0.0)
+    return (precision * ranked_target).sum() / float(normalizer)
+
+
+def precision_at_k(scores, target, k):
+    ranking = torch.argsort(scores, descending=True)[:k]
+    ranked_target = target[ranking].float()
+    if ranked_target.numel() == 0:
+        return torch.tensor(0.0)
+    return ranked_target.mean()
+
 class Model(pl.LightningModule):
     def __init__(self, seen_categories):
         super().__init__()
@@ -57,6 +78,9 @@ class Model(pl.LightningModule):
             persistent=False)
 
         self.best_metric = -1e3
+        self.gallery_loader = None
+        self.gallery_feat_all = None
+        self.gallery_category_all = None
         self.validation_step_outputs = []
 
     def configure_optimizers(self):
@@ -111,6 +135,22 @@ class Model(pl.LightningModule):
 
     def on_validation_epoch_start(self):
         self.validation_step_outputs.clear()
+        if self.gallery_loader is None:
+            self.gallery_feat_all = None
+            self.gallery_category_all = None
+            return
+
+        gallery_features = []
+        gallery_categories = []
+        with torch.no_grad():
+            for image_tensor, category in self.gallery_loader:
+                image_tensor = image_tensor.to(self.device, non_blocking=True)
+                image_feat = self.forward(image_tensor, dtype='image')
+                gallery_features.append(image_feat.detach().cpu())
+                gallery_categories.extend(list(category))
+
+        self.gallery_feat_all = torch.cat(gallery_features, dim=0)
+        self.gallery_category_all = np.array(gallery_categories)
 
     def validation_step(self, batch, batch_idx):
         sk_tensor, img_tensor, neg_tensor, category = batch[:4]
@@ -122,31 +162,37 @@ class Model(pl.LightningModule):
         self.log('val_loss', loss, on_step=False, on_epoch=True, batch_size=sk_tensor.shape[0])
         self.validation_step_outputs.append({
             'sketch_feat': sk_feat.detach().cpu(),
-            'image_feat': img_feat.detach().cpu(),
             'category': list(category),
         })
         return loss
 
     def on_validation_epoch_end(self):
-        if not self.validation_step_outputs:
+        if not self.validation_step_outputs or self.gallery_feat_all is None:
             return
         query_feat_all = torch.cat([output['sketch_feat'] for output in self.validation_step_outputs])
-        gallery_feat_all = torch.cat([output['image_feat'] for output in self.validation_step_outputs])
         all_category = np.array(sum([output['category'] for output in self.validation_step_outputs], []))
 
 
-        ## mAP category-level SBIR Metrics
-        gallery = gallery_feat_all
-        ap = torch.zeros(len(query_feat_all))
+        ## Sketchy-ext paper metrics: mAP@200 and P@200
+        gallery = self.gallery_feat_all
+        gallery_category = self.gallery_category_all
+        top_k = min(200, len(gallery))
+        ap_200 = torch.zeros(len(query_feat_all))
+        precision_200 = torch.zeros(len(query_feat_all))
         for idx, sk_feat in enumerate(query_feat_all):
             category = all_category[idx]
             scores = -1 * self.distance_fn(sk_feat.unsqueeze(0), gallery)
             target = torch.zeros(len(gallery), dtype=torch.bool)
-            target[np.where(all_category == category)] = True
-            ap[idx] = average_precision(scores.cpu(), target.cpu())
-        
-        mAP = torch.mean(ap)
-        self.log('mAP', mAP, on_step=False, on_epoch=True)
+            target[np.where(gallery_category == category)] = True
+            ap_200[idx] = average_precision_at_k(scores.cpu(), target.cpu(), top_k)
+            precision_200[idx] = precision_at_k(scores.cpu(), target.cpu(), top_k)
+
+        mAP_200 = torch.mean(ap_200)
+        p_200 = torch.mean(precision_200)
+        self.log('mAP_200', mAP_200, on_step=False, on_epoch=True)
+        self.log('P_200', p_200, on_step=False, on_epoch=True)
         if self.global_step > 0:
-            self.best_metric = self.best_metric if  (self.best_metric > mAP.item()) else mAP.item()
+            self.best_metric = self.best_metric if  (self.best_metric > mAP_200.item()) else mAP_200.item()
         self.validation_step_outputs.clear()
+        self.gallery_feat_all = None
+        self.gallery_category_all = None

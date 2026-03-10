@@ -9,10 +9,10 @@ try:
 except ImportError:
     from lightning.pytorch import Trainer
     from lightning.pytorch.callbacks import Callback, ModelCheckpoint
-    from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.loggers import TensorBoardLogger
 
 from src.model_LN_prompt import Model
-from src.dataset_retrieval import Sketchy
+from src.dataset_retrieval import Sketchy, SketchyImageGallery
 from experiments.options import opts
 
 
@@ -63,7 +63,7 @@ class EpochMetricsPrinter(Callback):
             return
         validation_metrics = self._collect_metrics(
             trainer.callback_metrics,
-            ['val_loss', 'mAP'])
+            ['val_loss', 'mAP_200', 'P_200'])
         epoch_metrics = dict(self.latest_train_metrics)
         epoch_metrics.update(validation_metrics)
         self._print_metrics(trainer.current_epoch + 1, epoch_metrics)
@@ -73,17 +73,19 @@ if __name__ == '__main__':
 
     train_dataset = Sketchy(opts, dataset_transforms, mode='train', return_orig=False)
     val_dataset = Sketchy(opts, dataset_transforms, mode='val', used_cat=train_dataset.all_categories, return_orig=False)
+    gallery_dataset = SketchyImageGallery(opts, dataset_transforms, val_dataset.all_photos_path)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=opts.batch_size, num_workers=opts.workers)
     val_loader = DataLoader(dataset=val_dataset, batch_size=opts.batch_size, num_workers=opts.workers)
+    gallery_loader = DataLoader(dataset=gallery_dataset, batch_size=opts.batch_size, num_workers=opts.workers)
 
     logger = TensorBoardLogger('tb_logs', name=opts.exp_name)
 
     checkpoint_callback = ModelCheckpoint(
-        monitor='val_loss',
+        monitor='mAP_200',
         dirpath='saved_models/%s'%opts.exp_name,
-        filename='{epoch:02d}-{val_loss:.4f}',
-        mode='min',
+        filename='{epoch:02d}-{mAP_200:.4f}',
+        mode='max',
         save_last=True)
 
     ckpt_path = os.path.join('saved_models', opts.exp_name, 'last.ckpt')
@@ -106,6 +108,7 @@ if __name__ == '__main__':
     )
 
     model = Model(seen_categories=train_dataset.all_categories)
+    model.gallery_loader = gallery_loader
 
     trainer.fit(
         model,
