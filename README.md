@@ -34,10 +34,17 @@ Cross-category FG-ZS-SBIR. A common (photo-sketch) learnable visual prompt share
  - `src` folder holds the source files.
  - `experiments` folder holds the executable wrapper for the model with particular specifications.
 
-An example command to run the code is given below:
-```shell
-$ cd Sketch_LVM
-$ python -m experiments.LN_prompt --exp_name=LN_prompt --n_prompts=3 --clip_LN_lr=1e-6 --prompt_lr=1e-4 --batch_size=192 --workers=128
+An example command to run the code in a notebook environment such as Kaggle is given below:
+```python
+!python -m experiments.LN_prompt \
+    --data_dir /kaggle/input/YOUR_DATASET/Sketchy \
+    --exp_name LN_prompt \
+    --n_prompts 3 \
+    --clip_LN_lr 1e-6 \
+    --prompt_lr 1e-4 \
+    --cls_loss_weight 1.0 \
+    --batch_size 32 \
+    --workers 4
 ```
 
 ## Qualitative Results
