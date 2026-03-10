@@ -17,41 +17,56 @@ from experiments.options import opts
 
 
 class EpochMetricsPrinter(Callback):
+    def __init__(self):
+        super().__init__()
+        self.latest_train_metrics = {}
+
     @staticmethod
-    def _format_metric(metrics, name):
+    def _metric_value(metrics, name):
         value = metrics.get(name)
         if value is None:
             return None
         if hasattr(value, 'item'):
             value = value.item()
-        return '{}={:.4f}'.format(name, value)
+        return value
 
-    def _print_metrics(self, trainer, include_validation_metrics):
-        metrics = trainer.callback_metrics
-        metric_names = [
-            'train_loss',
-            'train_triplet_loss',
-            'train_cls_loss',
-        ]
-        if include_validation_metrics:
-            metric_names.extend(['val_loss', 'mAP'])
+    def _collect_metrics(self, metrics, metric_names):
+        collected_metrics = {}
+        for name in metric_names:
+            value = self._metric_value(metrics, name)
+            if value is not None:
+                collected_metrics[name] = value
+        return collected_metrics
+
+    @staticmethod
+    def _print_metrics(epoch, metrics):
         formatted_metrics = [
-            self._format_metric(metrics, name)
-            for name in metric_names]
-        formatted_metrics = [metric for metric in formatted_metrics if metric is not None]
-        epoch = trainer.current_epoch + 1
+            '{}={:.4f}'.format(name, value)
+            for name, value in metrics.items()]
         print('epoch {:03d}: {}'.format(epoch, ' | '.join(formatted_metrics)))
 
     def on_train_epoch_end(self, trainer, pl_module):
+        self.latest_train_metrics = self._collect_metrics(
+            trainer.callback_metrics,
+            [
+            'train_loss',
+            'train_triplet_loss',
+            'train_cls_loss',
+        ])
         check_val_every_n_epoch = trainer.check_val_every_n_epoch or 1
         if trainer.val_dataloaders is not None and (trainer.current_epoch + 1) % check_val_every_n_epoch == 0:
             return
-        self._print_metrics(trainer, include_validation_metrics=False)
+        self._print_metrics(trainer.current_epoch + 1, self.latest_train_metrics)
 
     def on_validation_epoch_end(self, trainer, pl_module):
         if trainer.sanity_checking:
             return
-        self._print_metrics(trainer, include_validation_metrics=True)
+        validation_metrics = self._collect_metrics(
+            trainer.callback_metrics,
+            ['val_loss', 'mAP'])
+        epoch_metrics = dict(self.latest_train_metrics)
+        epoch_metrics.update(validation_metrics)
+        self._print_metrics(trainer.current_epoch + 1, epoch_metrics)
 
 if __name__ == '__main__':
     dataset_transforms = Sketchy.data_transform(opts)

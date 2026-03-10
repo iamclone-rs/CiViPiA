@@ -2,7 +2,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchmetrics.functional import retrieval_average_precision
 try:
     import pytorch_lightning as pl
 except ImportError:
@@ -17,6 +16,16 @@ def unfreeze_visual_layer_norms(model):
             for parameter in module.parameters():
                 parameter.requires_grad_(True)
 
+
+def average_precision(scores, target):
+    if target.sum() == 0:
+        return torch.tensor(0.0)
+    ranking = torch.argsort(scores, descending=True)
+    ranked_target = target[ranking].float()
+    precision = torch.cumsum(ranked_target, dim=0) / (
+        torch.arange(ranked_target.shape[0], dtype=torch.float32) + 1.0)
+    return (precision * ranked_target).sum() / ranked_target.sum()
+
 class Model(pl.LightningModule):
     def __init__(self, seen_categories):
         super().__init__()
@@ -29,6 +38,7 @@ class Model(pl.LightningModule):
         self.clip, _ = clip.load('ViT-B/32', device=self.device)
         self.clip.requires_grad_(False)
         unfreeze_visual_layer_norms(self.clip)
+        self.clip.train()
 
         # Prompt Engineering
         self.sk_prompt = nn.Parameter(torch.randn(self.opts.n_prompts, self.opts.prompt_dim))
@@ -130,10 +140,10 @@ class Model(pl.LightningModule):
         ap = torch.zeros(len(query_feat_all))
         for idx, sk_feat in enumerate(query_feat_all):
             category = all_category[idx]
-            distance = -1*self.distance_fn(sk_feat.unsqueeze(0), gallery)
+            scores = -1 * self.distance_fn(sk_feat.unsqueeze(0), gallery)
             target = torch.zeros(len(gallery), dtype=torch.bool)
             target[np.where(all_category == category)] = True
-            ap[idx] = retrieval_average_precision(distance.cpu(), target.cpu())
+            ap[idx] = average_precision(scores.cpu(), target.cpu())
         
         mAP = torch.mean(ap)
         self.log('mAP', mAP, on_step=False, on_epoch=True)
