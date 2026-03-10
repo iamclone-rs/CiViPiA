@@ -94,9 +94,9 @@ class Model(pl.LightningModule):
         img_cls_loss = self.compute_classification_loss(img_feat, labels)
         cls_loss = sk_cls_loss + img_cls_loss
         loss = triplet_loss + self.opts.cls_loss_weight * cls_loss
-        self.log('train_triplet_loss', triplet_loss, on_step=True, on_epoch=True, batch_size=sk_tensor.shape[0])
-        self.log('train_cls_loss', cls_loss, on_step=True, on_epoch=True, batch_size=sk_tensor.shape[0])
-        self.log('train_loss', loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=sk_tensor.shape[0])
+        self.log('train_triplet_loss', triplet_loss, on_step=False, on_epoch=True, batch_size=sk_tensor.shape[0])
+        self.log('train_cls_loss', cls_loss, on_step=False, on_epoch=True, batch_size=sk_tensor.shape[0])
+        self.log('train_loss', loss, on_step=False, on_epoch=True, batch_size=sk_tensor.shape[0])
         return loss
 
     def on_validation_epoch_start(self):
@@ -109,7 +109,7 @@ class Model(pl.LightningModule):
         neg_feat = self.forward(neg_tensor, dtype='image')
 
         loss = self.loss_fn(sk_feat, img_feat, neg_feat)
-        self.log('val_loss', loss, prog_bar=True, on_step=False, on_epoch=True, batch_size=sk_tensor.shape[0])
+        self.log('val_loss', loss, on_step=False, on_epoch=True, batch_size=sk_tensor.shape[0])
         self.validation_step_outputs.append({
             'sketch_feat': sk_feat.detach().cpu(),
             'image_feat': img_feat.detach().cpu(),
@@ -136,8 +136,7 @@ class Model(pl.LightningModule):
             ap[idx] = retrieval_average_precision(distance.cpu(), target.cpu())
         
         mAP = torch.mean(ap)
-        self.log('mAP', mAP, prog_bar=True)
+        self.log('mAP', mAP, on_step=False, on_epoch=True)
         if self.global_step > 0:
             self.best_metric = self.best_metric if  (self.best_metric > mAP.item()) else mAP.item()
-        print ('mAP: {}, Best mAP: {}'.format(mAP.item(), self.best_metric))
         self.validation_step_outputs.clear()
