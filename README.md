@@ -40,11 +40,10 @@ An example command to run the code in a notebook environment such as Kaggle is g
     --data_dir /kaggle/input/YOUR_DATASET/Sketchy \
     --exp_name LN_prompt \
     --n_prompts 3 \
-    --clip_LN_lr 1e-6 \
-    --prompt_lr 1e-4 \
-    --cls_loss_weight 1.0 \
-    --batch_size 32 \
-    --workers 4
+    --clip_LN_lr 1e-5 \
+    --prompt_lr 1e-5 \
+    --cls_loss_weight 0.5 \
+    --batch_size 64
 ```
 
 ## Qualitative Results

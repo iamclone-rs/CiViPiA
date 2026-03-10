@@ -42,7 +42,7 @@ if __name__ == '__main__':
     trainer = Trainer(
         accelerator='auto',
         devices='auto',
-        min_epochs=1, max_epochs=2000,
+        min_epochs=1, max_epochs=60,
         benchmark=True,
         logger=logger,
         num_sanity_val_steps=0,

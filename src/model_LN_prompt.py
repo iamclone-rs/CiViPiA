@@ -36,7 +36,7 @@ class Model(pl.LightningModule):
 
         self.distance_fn = lambda x, y: 1.0 - F.cosine_similarity(x, y)
         self.loss_fn = nn.TripletMarginWithDistanceLoss(
-            distance_function=self.distance_fn, margin=0.2)
+            distance_function=self.distance_fn, margin=0.3)
         self.cls_loss_fn = nn.CrossEntropyLoss()
         text_prompts = [
             'a photo of a {}'.format(category.replace('_', ' '))
